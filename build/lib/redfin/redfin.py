@@ -1,8 +1,14 @@
 import requests
 import json
+import os
 
 class Redfin:
-    def __init__(self):
+    def __init__(self, cookie_file_path):
+        """
+        Initializes the Redfin client.
+
+        :param cookie_file_path: Path to the JSON file where cookies are stored.
+        """
         self.base = 'https://www.redfin.com/stingray/'
         self.session = requests.Session()
         self.session.headers.update({
@@ -19,17 +25,51 @@ class Redfin:
             'upgrade-insecure-requests': '1',
             'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
         })
-        self.refresh_cookies()
+        self.cookie_file_path = cookie_file_path
+        self.load_cookies()
+
+    def load_cookies(self):
+        """
+        Loads cookies from the specified JSON file into the session.
+        If the file does not exist or is invalid, refreshes cookies.
+        """
+        if os.path.exists(self.cookie_file_path):
+            try:
+                with open(self.cookie_file_path, 'r') as f:
+                    cookies = json.load(f)
+                self.session.cookies.update(cookies)
+                print("Loaded cookies from storage.")
+            except Exception as e:
+                print(f"Failed to load cookies from {self.cookie_file_path}: {e}")
+                self.refresh_cookies()
+        else:
+            print("Cookie file not found. Refreshing cookies...")
+            self.refresh_cookies()
+
+    def save_cookies(self):
+        """
+        Saves the current session's cookies to the specified JSON file.
+        """
+        try:
+            with open(self.cookie_file_path, 'w') as f:
+                json.dump(self.session.cookies.get_dict(), f)
+            print(f"Cookies saved to {self.cookie_file_path}.")
+        except Exception as e:
+            print(f"Failed to save cookies to {self.cookie_file_path}: {e}")
 
     def refresh_cookies(self):
         """
-        Perform an initial request to obtain fresh cookies.
+        Performs an initial request to obtain fresh cookies and saves them.
         """
         print("Refreshing cookies...")
-        response = self.session.get('https://www.redfin.com/')
-        response.raise_for_status()
-        # You can add additional logic here if specific cookies are needed
-        print("Cookies refreshed.")
+        try:
+            response = self.session.get('https://www.redfin.com/')
+            response.raise_for_status()
+            self.save_cookies()
+            print("Cookies refreshed successfully.")
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to refresh cookies: {e}")
+            raise
 
     def meta_property(self, url, kwargs, page=False):
         if page:
@@ -40,20 +80,40 @@ class Redfin:
         })
 
     def meta_request(self, url, kwargs):
+        """
+        Makes a GET request to the specified Redfin API endpoint with provided parameters.
+        If a 401 Unauthorized error is encountered, refreshes cookies and retries once.
+
+        :param url: API endpoint URL (relative to base).
+        :param kwargs: Dictionary of query parameters.
+        :return: Parsed JSON response.
+        """
         try:
             response = self.session.get(self.base + url, params=kwargs)
             response.raise_for_status()
             return json.loads(response.text[4:])
         except requests.exceptions.HTTPError as e:
-            if response.status_code == 401:  # Unauthorized, possibly due to expired cookies
-                print("Unauthorized access. Refreshing cookies and retrying...")
+            if response.status_code == 401:
+                print("Unauthorized access detected. Refreshing cookies and retrying...")
                 self.refresh_cookies()
-                response = self.session.get(self.base + url, params=kwargs)
-                response.raise_for_status()
-                return json.loads(response.text[4:])
+                try:
+                    response = self.session.get(self.base + url, params=kwargs)
+                    response.raise_for_status()
+                    return json.loads(response.text[4:])
+                except requests.exceptions.HTTPError as retry_e:
+                    print(f"Retry failed: {retry_e}")
+                    raise
             else:
-                raise e
+                print(f"HTTP error occurred: {e}")
+                raise
+        except requests.exceptions.RequestException as req_e:
+            print(f"Request exception: {req_e}")
+            raise
+        except json.JSONDecodeError as json_e:
+            print(f"Failed to parse JSON response: {json_e}")
+            raise
 
+    # ... (rest of your methods remain unchanged)
 
     def initial_info(self, url, **kwargs):
         return self.meta_request('api/home/details/initialInfo', {'path': url, **kwargs})
