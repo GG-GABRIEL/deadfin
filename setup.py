@@ -7,7 +7,7 @@ setup(
     name="deadfin",  # How you named your package folder (MyLib)
     version="0.1.0",  # Start with a small number and increase it with every change you make
     license="MIT",  # Chose a license from here: https://help.github.com/articles/licensing-a-repository
-    description='A custom fork of the Redfin library with enhanced cookie management.'
+    description="A custom fork of the Redfin library with enhanced cookie management."
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Gabriel Jordao",  # Type in your name
